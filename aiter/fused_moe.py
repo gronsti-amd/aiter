@@ -111,6 +111,7 @@ def fused_moe(
     bias1=None,
     bias2=None,
 ):
+    print(topk_ids.shape)
     if not block_size_M:
         block_size_M = -1
     return fused_moe_(
