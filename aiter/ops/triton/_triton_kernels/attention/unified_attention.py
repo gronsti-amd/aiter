@@ -245,15 +245,22 @@ def kernel_unified_attention_2d(
             block_tables_ptr + block_table_offset + seq_offset // BLOCK_SIZE
         ).to(tl.int64)
 
+        # Check for invalid block indices (PAD_SLOT_ID = -1)
+        # This can happen during MTP/speculative decoding when block tables
+        # are padded with -1 for unused slots.
+        valid_block_mask = physical_block_idx >= 0
+        # Clamp to prevent memory access fault, masked positions ignored anyway
+        physical_block_idx_clamped = tl.where(valid_block_mask, physical_block_idx, 0)
+
         v_offset = (
-            physical_block_idx[:, None] * stride_v_cache_0
+            physical_block_idx_clamped[:, None] * stride_v_cache_0
             + kv_head_idx * stride_v_cache_2
             + offs_d[None, :] * stride_v_cache_3
             + (seq_offset % BLOCK_SIZE)[:, None] * stride_v_cache_1
         )
 
         k_offset = (
-            physical_block_idx[None, :] * stride_k_cache_0
+            physical_block_idx_clamped[None, :] * stride_k_cache_0
             + kv_head_idx * stride_k_cache_2
             + offs_d[:, None] * stride_k_cache_3
             + (seq_offset % BLOCK_SIZE)[None, :] * stride_k_cache_1
@@ -262,7 +269,7 @@ def kernel_unified_attention_2d(
         # K : (HEAD_SIZE, TILE_SIZE)
         K_load = tl.load(
             key_cache_ptr + k_offset,
-            mask=dim_mask[:, None] & tile_mask[None, :],
+            mask=dim_mask[:, None] & tile_mask[None, :] & valid_block_mask[None, :],
             other=0.0,
             cache_modifier=KV_cache_modifier,
         )
@@ -278,7 +285,7 @@ def kernel_unified_attention_2d(
         # V : (TILE_SIZE, HEAD_SIZE)
         V_load = tl.load(
             value_cache_ptr + v_offset,
-            mask=dim_mask[None, :] & tile_mask[:, None],
+            mask=dim_mask[None, :] & tile_mask[:, None] & valid_block_mask[:, None],
             other=0.0,
             cache_modifier=KV_cache_modifier,
         )
@@ -556,15 +563,22 @@ def kernel_unified_attention_3d(
             block_tables_ptr + block_table_offset + seq_offset // BLOCK_SIZE
         ).to(tl.int64)
 
+        # Check for invalid block indices (PAD_SLOT_ID = -1)
+        # This can happen during MTP/speculative decoding when block tables
+        # are padded with -1 for unused slots.
+        valid_block_mask = physical_block_idx >= 0
+        # Clamp to prevent memory access fault, masked positions ignored anyway
+        physical_block_idx_clamped = tl.where(valid_block_mask, physical_block_idx, 0)
+
         v_offset = (
-            physical_block_idx[:, None] * stride_v_cache_0
+            physical_block_idx_clamped[:, None] * stride_v_cache_0
             + kv_head_idx * stride_v_cache_2
             + offs_d[None, :] * stride_v_cache_3
             + (seq_offset % BLOCK_SIZE)[:, None] * stride_v_cache_1
         )
 
         k_offset = (
-            physical_block_idx[None, :] * stride_k_cache_0
+            physical_block_idx_clamped[None, :] * stride_k_cache_0
             + kv_head_idx * stride_k_cache_2
             + offs_d[:, None] * stride_k_cache_3
             + (seq_offset % BLOCK_SIZE)[None, :] * stride_k_cache_1
@@ -573,7 +587,7 @@ def kernel_unified_attention_3d(
         # K : (HEAD_SIZE, TILE_SIZE)
         K_load = tl.load(
             key_cache_ptr + k_offset,
-            mask=dim_mask[:, None] & tile_mask[None, :],
+            mask=dim_mask[:, None] & tile_mask[None, :] & valid_block_mask[None, :],
             other=0.0,
             cache_modifier=KV_cache_modifier,
         )
@@ -589,7 +603,7 @@ def kernel_unified_attention_3d(
         # V : (TILE_SIZE, HEAD_SIZE)
         V_load = tl.load(
             value_cache_ptr + v_offset,
-            mask=dim_mask[None, :] & tile_mask[:, None],
+            mask=dim_mask[None, :] & tile_mask[:, None] & valid_block_mask[:, None],
             other=0.0,
             cache_modifier=KV_cache_modifier,
         )
